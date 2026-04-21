@@ -3,13 +3,31 @@ import mediapipe as mp
 import numpy as np
 from collections import deque
 
-mpHands = mp.solutions.hands
-hands = mpHands.Hands(
-    max_num_hands=1,
-    min_detection_confidence=0.8,
+# Initialize MediaPipe Hands using the new API
+BaseOptions = mp.tasks.BaseOptions
+HandLandmarker = mp.tasks.vision.HandLandmarker
+HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+VisionRunningMode = mp.tasks.vision.RunningMode
+
+options = HandLandmarkerOptions(
+    base_options=BaseOptions(model_asset_path='hand_landmarker.task'),
+    running_mode=VisionRunningMode.IMAGE,
+    num_hands=1,
+    min_hand_detection_confidence=0.8,
+    min_hand_presence_confidence=0.8,
     min_tracking_confidence=0.8
 )
-mpDraw = mp.solutions.drawing_utils
+
+# Download model if not exists
+import urllib.request
+import os
+if not os.path.exists('hand_landmarker.task'):
+    print("Downloading hand landmarker model...")
+    url = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
+    urllib.request.urlretrieve(url, 'hand_landmarker.task')
+    print("Model downloaded!")
+
+hand_detector = HandLandmarker.create_from_options(options)
 
 cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -93,22 +111,26 @@ while True:
     cv2.putText(frame, "RED", (360,45), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
     cv2.putText(frame, "YELLOW", (500,45), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,0), 2)
     
-    # Convert to RGB
+    # Convert to RGB and MediaPipe Image
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
     
     # Hand detection
-    results = hands.process(rgb)
+    results = hand_detector.detect(mp_image)
     
     lmList = []
+    h, w, c = frame.shape
     
-    if results.multi_hand_landmarks:
-        for handLms in results.multi_hand_landmarks:
-            for id, lm in enumerate(handLms.landmark):
-                h, w, c = frame.shape
+    if results.hand_landmarks:
+        for hand_landmarks in results.hand_landmarks:
+            for id, lm in enumerate(hand_landmarks):
                 cx, cy = int(lm.x * w), int(lm.y * h)
                 lmList.append([id, cx, cy])
             
-            mpDraw.draw_landmarks(frame, handLms, mpHands.HAND_CONNECTIONS)
+            # Draw hand landmarks
+            for landmark in hand_landmarks:
+                cx, cy = int(landmark.x * w), int(landmark.y * h)
+                cv2.circle(frame, (cx, cy), 3, (0, 255, 0), -1)
     
     # If hand detected
     if len(lmList) != 0:
